@@ -1,125 +1,206 @@
-baguette
+# baguette
 
-A 123M-parameter French language model trained from scratch — corpus, tokenizer, pretraining, conversational fine-tuning and evaluation included.
+**A 123M-parameter French language model, trained from scratch for $12.**
 
-No pretrained weights, no transfer from English. The corpus, the vocabulary and all 123 million parameters are built here.
+No pretrained weights, no transfer from English. The corpus, the 16,384-entry vocabulary and all 123 million parameters are built here. baguette works through problems in a `<think>…</think>` scratchpad before answering, and beats the public French GPT-2s at the same size on language modelling, arithmetic and factual recall.
 
-Total cost: about $12 of GPU time and 4 hours of compute.
+```
+you   › Calcule : 88 + 59
+model › <think>
+        88 + 59.
+        Dizaines : 80 + 50 = 130.
+        Unités : 8 + 9 = 17.
+        Total : 130 + 17 = 147.
+        </think>
+        147
 
-Results
+you   › Bonjour, tu peux te présenter ?
+model › <think>
+        </think>
+        Bonjour ! Je suis un petit assistant français. Comment puis-je vous aider ?
+```
 
-Compared against three public French GPT-2 models of equivalent size (~124M), on a validation corpus held out from training.
+The scratchpad fills up for a calculation and stays empty for small talk: the model learns *when* to think, not just how.
 
-Model	bpb ↓	arithmetic ↑	facts ↑
-baguette · 123M	1.200	93%	88%
-GPT-fr small · 124M (Inria)	1.504	7%	38%
-BelGPT-2 · 124M (60 GB of French)	1.732	7%	62%
-GPT-2 fr · 124M (EN→FR transfer)	1.755	0%	38%
+**Qwen3.5-style** architecture, **Muon** optimizer, **WSD** schedule, full pipeline from corpus download to benchmark. 3h20 of A100 time for pretraining, 25 minutes for fine-tuning.
 
-The headline metric is bits per byte, the only honest way to compare models with different tokenizers. BelGPT-2 saw 60 GB of French; baguette saw 3.2.
+---
 
-Generalisation
+## Results
 
-40 hand-written problems, phrased in ways absent from the training corpus:
+Against the closest public French causal LMs, all of comparable size — [GPT-fr small](https://huggingface.co/asi/gpt-fr-cased-small), [BelGPT-2](https://huggingface.co/antoinelouis/belgpt2), [gpt2-french-small](https://huggingface.co/dbddv01/gpt2-french-small):
 
-Model	rephrased	new context	new concept	total
-baguette	11/15	7/15	6/10	24/40
-GPT-fr small	0/15	0/15	0/10	0/40
-BelGPT-2	0/15	0/15	0/10	0/40
-GPT-2 fr	0/15	0/15	1/10	1/40
+| model | params | bpb ↓ ¹ | arithmetic ↑ ² | facts ↑ ³ |
+|---|---|---|---|---|
+| **baguette (sft)** | **123M** | **1.200** | **93%** | **88%** |
+| GPT-fr small (Inria) | 124M | 1.504 | 7% | 38% |
+| BelGPT-2 (60 GB corpus) | 124M | 1.732 | 7% | 62% |
+| French GPT-2 (transfer) | 124M | 1.755 | 0% | 38% |
 
-Most of this gap comes from conversational fine-tuning, which the base models don't have: they follow no instructions and loop. The comparison measures the full pipeline, not pretraining alone.
+¹ *bits per byte* on 300k characters of held-out French — the only honest way to compare losses across different tokenizers. The held-out set is recovered by replaying the validation draw of `encode_pretrain` (seed 1234), not by reading the tail of the raw files, which would be training data.
+² 30 arithmetic problems from a generation seed never used in training, greedy decoding. baguette answers in its native chat format; the base models get a 3-shot prompt, their best protocol. This measures the full pipeline, fine-tuning included — not pretraining alone.
+³ 8 factual completions, raw continuation, regex-scored. Same protocol for every model.
 
-What the model cannot do
+Full reports with every answer: `bench_reports/`.
 
-On a second benchmark whose problem families are deliberately absent from the corpus, baguette scores 4/40:
+### The honest benchmark
 
-family	score	
-transitivity	3/6	A>B, B>C ⇒ A>C — never taught, learned from reading French
-off-by-one	1/6	fencepost errors
-trick questions	0/6	cannot say "I don't know"
-composition	0/7	"double the double of 5" → computes a single double
-branches, remainder, cycles	0/15	families absent from the corpus
+40 **out-of-distribution** problems — reworded phrasings, novel contexts, novel concepts, all hand-written (`bench_ood.py`):
 
-The three GPT-2 models score 1 to 3 out of 40 on the same test, and no model passes a single trick question. Knowing when to refuse to answer is a capability that does not emerge from next-token prediction — it has to be taught.
+| | reworded | novel context | novel concept | total |
+|---|---|---|---|---|
+| **baguette** | 11/15 | 7/15 | 6/10 | **24/40** |
+| best 124M baseline | 0/15 | 0/15 | 1/10 | 1/40 |
 
-Architecture
+The baselines score zero because they follow no instructions at all: they loop on the question instead of answering it. And baguette's own score deserves an asterisk — since the arithmetic corpus now covers doubles, halves and equal shares, part of the *reworded* column measures revision rather than generalisation. Which is why there is a second benchmark.
 
-123M parameters (110M excluding embeddings), 16 layers, d=768.
+### The benchmark that hurts
 
-GQA 3:1 — 12 query heads, 4 key/value heads
-Zero-centred RMSNorm and QK-Norm (Qwen3.5)
-Partial RoPE — 16 dimensions out of 64
-SwiGLU, FFN width 2048
-Muon for 2D matrices, AdamW for embeddings and gains
-WSD schedule (Warmup-Stable-Decay) — a plateau, then decay over the final 20%
-1024 context, 16,384-entry BPE vocabulary trained on the corpus
-Corpus
+Seven problem families deliberately kept out of every corpus (`bench_ood_v2.py`). baguette scores **4/40**:
 
-836M pretraining tokens (French FineWeb-Edu, Wikipedia, dialogue) and 91M fine-tuning tokens, including a generated arithmetic dataset (gen_math.py) and distilled dialogue.
+| family | | what it tests |
+|---|---|---|
+| transitivity | 3/6 | A>B, B>C ⇒ A>C — never taught, learned from reading French |
+| off-by-one | 1/6 | fenceposts, inclusive bounds, ribbon cuts |
+| trick questions | 0/6 | **saying "I don't know" instead of inventing a number** |
+| composition | 0/7 | "double the double of 5" → computes a single double |
+| branches, remainder, cycles | 0/15 | families absent from the corpus |
 
-The tokenizer is trained on the corpus: weights and vocabulary go together, and a checkpoint is only usable with the tokenizer it learned on.
+The three GPT-2 models score 1 to 3 out of 40 here, so the gap is within noise — and **no model, mine included, passes a single trick question.** Asked how many bananas are in a basket of apples and oranges, baguette confidently answers eight. Knowing when to refuse is a capability that does not emerge from next-token prediction; it has to be taught, and no mainstream fine-tuning corpus teaches it.
 
-Usage
-bash
+Both benchmarks ship with the repo, because either one alone would tell a lie.
+
+---
+
+## Try it
+
+Weights are in the [latest release](../../releases/latest): `baguette-123m-sft.pt` (chat, recommended), `baguette-123m-base.pt` (before fine-tuning), and `tokenizer.json`. fp16, weights only, 258 MB each.
+
+```bash
+pip install -r requirements.txt
+```
+
+Lay the files out like this — the `ckpt_latest.pt` name matters:
+
+```
+runs/baguette/tokenizer.json
+runs/baguette/sft/ckpt_latest.pt      <- baguette-123m-sft.pt renamed
+```
+
+Then:
+
+```bash
+python run.py chat --run baguette --temperature 0.5 --top-k 20
+```
+
+**Use those sampling settings.** At 123M the defaults (0.8 / 50) are too permissive and the model wanders; 0.5 / 20 is where it holds together. Chat commands: `/think auto|on|off`, `/temp`, `/topp`, `/topk`, `/max`, `/raw <text>`, `/reset`, `/quit`. CPU is plenty for inference at this size.
+
+---
+
+## The repo
+
+```
+run.py               CLI: prepare / train / sft / chat / info
+model.py             Qwen3.5-style architecture: GQA, zero-centred QK-Norm,
+                     partial RoPE, SwiGLU, KV-cached generation
+data.py              French corpus download, BPE tokenizer, binarisation,
+                     <think> format conversion
+optim.py             Muon (batched Newton-Schulz orthogonalization) + LR schedules
+gen_math.py          French arithmetic generator: systematic coverage, every
+                     operation decomposed inside the scratchpad
+modal_train.py       the same pipeline on a rented A100
+rebuild_sft.py       rebuild the fine-tuning corpus without retraining the tokenizer
+extract_eval.py      recover the true validation set by replaying the seed-1234 draw
+export_weights.py    training checkpoint (1 GB) -> fp16 weights (258 MB)
+bench_vs.py          vs the public French GPT-2s (bpb, arithmetic, facts)
+bench_ood.py         40 hand-written unseen problems
+bench_ood_v2.py      seven held-out families
+bench_reports/       full reports, every model answer included
+```
+
+---
+
+## Reproduce it
+
+```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-Locally
-bash
+```
+
+### Locally
+
+```bash
 python run.py prepare --target-tokens 1e9   # corpus, tokenizer, binarisation
 python run.py train   --preset small        # pretraining
 python run.py sft                           # conversational fine-tuning
 python run.py chat                          # talk to the result
-python run.py info                          # corpus and checkpoint status
+```
 
-Training detects CUDA, MPS (Apple Silicon) or CPU. torch.compile is only enabled on CUDA — Triton does not exist on MPS.
+Training auto-detects CUDA, MPS (Apple Silicon) or CPU. `torch.compile` is CUDA-only — Triton does not exist on MPS, which costs about half the throughput.
 
-On a MacBook Air M5, full pretraining would take roughly 17 days. Hence what follows.
+On a MacBook Air M5 the full run would take roughly **17 days**: 1,300 tokens/s against an A100's 160,000. Hence what follows.
 
-On rented GPU
+### On a rented A100 (~$12, 4 hours)
 
-modal_train.py runs the same pipeline on an A100 via Modal, with a persistent volume for the corpus and checkpoints.
-
-bash
+```bash
 modal run --detach modal_train.py::prepare
 modal run --detach modal_train.py::train --steps 25000
 modal run --detach modal_train.py::sft   --steps 2500
 modal volume get llm-data runs/gpu1/sft/ckpt_best.pt ./runs/gpu1/sft/ckpt_best.pt
+```
 
-160,000 tokens/s, 42% MFU. Full pretraining fits in 3h20.
+**160,000 tokens/s, 42% MFU, 21 GB peak.** Pretraining: 25,000 steps, 1.64B tokens, 3h20, val loss 2.54 (ppl 12.6). Fine-tuning: 2,500 steps, 25 min, val loss 1.42.
 
-Containers are preemptible: Modal can reclaim the GPU at any time and then restarts the function with the same arguments. Without care, the run starts over from scratch and overwrites the work done. train() and sft() therefore detect the checkpoint at startup and add --resume themselves. Two preemptions occurred during pretraining, costing a few minutes each.
+`Ctrl+C` stops cleanly with a checkpoint, auto-checkpoint every 5 minutes, `--resume` picks up at the exact step with the optimizer state, RNG and batch order restored.
 
-Evaluating
-bash
-modal run modal_train.py::extract_eval_text   # extract the real validation set
-modal volume get llm-data eval_text.txt ./eval_text.txt
-python bench_vs.py     --run gpu1             # against French GPT-2 models
-python bench_ood.py    --run gpu1             # unseen problems
-python bench_ood_v2.py --run gpu1             # held-out families
+⚠️ **Modal containers are preemptible.** When the GPU is reclaimed, Modal restarts the function *with the same arguments* — which means starting over from scratch and overwriting the run in progress. `train()` and `sft()` therefore check for a checkpoint at startup and add `--resume` themselves. Two preemptions happened during pretraining; each cost about a minute.
 
-extract_eval.py replays the random draw performed by encode_pretrain (seed 1234) to recover the documents that actually went to validation. Reading the tail of the raw files, the obvious shortcut, would feed the model data it has already seen — and produce a flattering but meaningless bpb.
+### The data
 
-Files
-	
-run.py	entry point: prepare / train / sft / chat / info
-model.py	architecture
-data.py	corpus, tokenizer, binarisation
-optim.py	Muon and learning-rate schedules
-modal_train.py	training on rented GPU
-gen_math.py	arithmetic corpus generation
-rebuild_sft.py	fine-tuning corpus rebinarisation
-extract_eval.py	validation set extraction
-bench_*.py	evaluation
+836M pretraining tokens, 91M fine-tuning tokens.
 
-Weights and corpus are not versioned (1 GB per checkpoint). The full pipeline reproduces with the commands above.
+| source | role |
+|---|---|
+| FineWeb-Edu (`fra_Latn`) | filtered French web |
+| French Wikipedia | clean, factual French |
+| `french_instruct` | 275k French conversations |
+| French Alpaca | instructions |
+| distilled dialogue | `<think>` traces |
+| **`gen_math.py`** | **locally generated arithmetic, solutions computed in Python** |
 
-Two things learned along the way
+The tokenizer is trained on the corpus: weights and vocabulary go together, and a checkpoint is only usable with the tokenizer it learned on. Re-running `prepare` trains a new one and silently breaks every existing checkpoint — hence `rebuild_sft.py`, which rebuilds the fine-tuning binaries against the existing tokenizer.
 
-Which fine-tuning data you use matters more than how much. The initial corpus contained a reasoning source whose <think> blocks ran to 300 words of hesitant monologue. The model learned to imitate them and would produce paragraphs of deliberation over "give me three colours". Removing that source improved validation loss and conciseness. Adding a systematically-covered arithmetic corpus afterwards — every two-digit addition, with the operation decomposed inside the <think> block — took arithmetic from 50% to 93% without degrading bits per byte.
+---
 
-A benchmark dies the moment its families enter the corpus. The first out-of-distribution benchmark measured generalisation; now that the arithmetic corpus covers doubles, halves and equal shares, it partly measures revision. Hence the second one, with families kept out — and the hygiene rule written at the top of the file.
+## What actually moved the needle
 
-Credits
+**Removing data, not adding it.** The fine-tuning corpus included a reasoning source whose `<think>` blocks ran to 300 words of hesitant monologue — *"alternatively, perhaps the user means…"*. The model learned to imitate the form without the function and would deliberate for four paragraphs over "give me three colours". Dropping that source improved validation loss *and* conciseness, in one 25-minute run.
 
-Muon: Keller Jordan. Corpus: FineWeb-Edu (HuggingFace), French Wikipedia. The v2 out-of-distribution benchmark reuses the structure and problem families designed by @0xZKnw for his own model
+**Systematic coverage beats sampling.** The model got 7×11 right and 88+59 wrong: it had memorised cases rather than learned a procedure. `gen_math.py` emits *every* two-digit addition, with the operation decomposed in the scratchpad — `80+50=130, 8+9=17, total 147`. Arithmetic went from 50% to 93% and the out-of-distribution score from 15/40 to 24/40, with bits per byte unchanged at 1.20. Teaching a procedure generalises; teaching answers does not.
+
+**A benchmark dies the moment its families enter the corpus.** The first OOD benchmark measured generalisation until the arithmetic corpus started covering doubles and halves. It now partly measures revision, which is why `bench_ood_v2.py` exists, with a hygiene rule written at the top of the file: none of these problems may ever enter a training set.
+
+---
+
+## Limitations
+
+A 123M model trained on 1.64B tokens is not ChatGPT.
+
+**Works:** correct French, short structured answers, two-digit arithmetic in its own format (93%), readable scratchpad, clean stops, factual recall on common knowledge (88%).
+
+**Fragile:** multi-turn tracking (it will drag a number from the previous question into the next answer), problems phrased far from anything seen, composed operations.
+
+**Doesn't:** admit ignorance — it invents a plausible number instead (0/6). Long context. Anything that isn't French. And having been fine-tuned partly on dialogue shared with [frlm](https://github.com/0xZKnw/frlm), it occasionally introduces itself under that name — a small reminder of how much of a model's identity comes from its fine-tuning data.
+
+---
+
+## Credits
+
+Muon: [Keller Jordan](https://kellerjordan.github.io/posts/muon/).
+Architecture: [Qwen3.5](https://huggingface.co/blog/mlabonne/qwen35).
+Corpus: FineWeb-Edu, French Wikipedia, and the datasets listed above.
+The v2 out-of-distribution benchmark reuses the structure and problem families designed by [@0xZKnw](https://github.com/0xZKnw) for [frlm](https://github.com/0xZKnw/frlm) — a 58M French reasoning model built in parallel with this one, and the reason several of the ideas here exist.
+
+## License
+
+MIT. The listed datasets keep their respective licenses.
