@@ -1,0 +1,30 @@
+# Weights and checkpoints (1 GB per file, GitHub rejects anything over 100 MB)
+runs/
+*.pt
+*.bin
+
+# Corpus (several GB, reproducible with `python run.py prepare`)
+data/
+*.jsonl
+eval_text.txt
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+
+# Modal
+.modal.toml

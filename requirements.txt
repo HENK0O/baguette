@@ -1,0 +1,15 @@
+# Core: training and inference
+torch>=2.1
+numpy
+tokenizers
+rich
+
+# Corpus preparation
+datasets
+tqdm
+
+# Cloud training (optional, see modal_train.py)
+modal
+
+# Benchmarking against public models (optional)
+# transformers>=4.57
