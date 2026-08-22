@@ -41,11 +41,13 @@ Against the closest public French causal LMs, all of comparable size — [GPT-fr
 ² 30 arithmetic problems from a generation seed never used in training, greedy decoding. baguette answers in its native chat format; the base models get a 3-shot prompt, their best protocol. This measures the full pipeline, fine-tuning included — not pretraining alone.
 ³ 8 factual completions, raw continuation, regex-scored. Same protocol for every model.
 
+The baselines' occasional points are scoring artefacts: the grader reads the last number in the output, and a degenerate loop eventually emits a matching one by chance. Asked to compute 45 ÷ 9, BelGPT-2 answers *"15 + 5Ha ! Il est donc important de bien choisir son matériel…"* and scores the point. Their real arithmetic score is zero.
+
 Full reports with every answer: `bench_reports/`.
 
 ### The honest benchmark
 
-40 **out-of-distribution** problems — reworded phrasings, novel contexts, novel concepts, all hand-written (`bench_ood.py`):
+40 **out-of-distribution** problems — reworded phrasings, novel contexts, novel concepts, all hand-written (`bench/bench_ood.py`):
 
 | | reworded | novel context | novel concept | total |
 |---|---|---|---|---|
@@ -56,7 +58,7 @@ The baselines score zero because they follow no instructions at all: they loop o
 
 ### The benchmark that hurts
 
-Seven problem families deliberately kept out of every corpus (`bench_ood_v2.py`). baguette scores **4/40**:
+Seven problem families deliberately kept out of every corpus (`bench/bench_ood_v2.py`). baguette scores **4/40**:
 
 | family | | what it tests |
 |---|---|---|
@@ -112,9 +114,10 @@ modal_train.py       the same pipeline on a rented A100
 rebuild_sft.py       rebuild the fine-tuning corpus without retraining the tokenizer
 extract_eval.py      recover the true validation set by replaying the seed-1234 draw
 export_weights.py    training checkpoint (1 GB) -> fp16 weights (258 MB)
-bench_vs.py          vs the public French GPT-2s (bpb, arithmetic, facts)
-bench_ood.py         40 hand-written unseen problems
-bench_ood_v2.py      seven held-out families
+bench/
+  bench_vs.py        vs the public French GPT-2s (bpb, arithmetic, facts)
+  bench_ood.py       40 hand-written unseen problems
+  bench_ood_v2.py    seven held-out families
 bench_reports/       full reports, every model answer included
 ```
 
@@ -155,6 +158,21 @@ modal volume get llm-data runs/gpu1/sft/ckpt_best.pt ./runs/gpu1/sft/ckpt_best.p
 
 ⚠️ **Modal containers are preemptible.** When the GPU is reclaimed, Modal restarts the function *with the same arguments* — which means starting over from scratch and overwriting the run in progress. `train()` and `sft()` therefore check for a checkpoint at startup and add `--resume` themselves. Two preemptions happened during pretraining; each cost about a minute.
 
+### Evaluating
+
+```bash
+modal run modal_train.py::extract_eval_text   # recover the true validation set
+modal volume get llm-data eval_text.txt ./eval_text.txt
+
+python -m bench.bench_vs     --run gpu1       # against the French GPT-2s
+python -m bench.bench_ood    --run gpu1       # 40 unseen problems
+python -m bench.bench_ood_v2 --run gpu1       # seven held-out families
+```
+
+Add `--skip-hf` (or `--hf none` for v2) to evaluate baguette alone, without downloading the baselines.
+
+`extract_eval.py` replays the validation draw performed by `encode_pretrain` (seed 1234) to recover the documents that actually went to validation. Reading the tail of the raw corpus files, the obvious shortcut, would feed the model data it has already seen — and produce a flattering but meaningless bpb.
+
 ### The data
 
 836M pretraining tokens, 91M fine-tuning tokens.
@@ -178,7 +196,7 @@ The tokenizer is trained on the corpus: weights and vocabulary go together, and 
 
 **Systematic coverage beats sampling.** The model got 7×11 right and 88+59 wrong: it had memorised cases rather than learned a procedure. `gen_math.py` emits *every* two-digit addition, with the operation decomposed in the scratchpad — `80+50=130, 8+9=17, total 147`. Arithmetic went from 50% to 93% and the out-of-distribution score from 15/40 to 24/40, with bits per byte unchanged at 1.20. Teaching a procedure generalises; teaching answers does not.
 
-**A benchmark dies the moment its families enter the corpus.** The first OOD benchmark measured generalisation until the arithmetic corpus started covering doubles and halves. It now partly measures revision, which is why `bench_ood_v2.py` exists, with a hygiene rule written at the top of the file: none of these problems may ever enter a training set.
+**A benchmark dies the moment its families enter the corpus.** The first OOD benchmark measured generalisation until the arithmetic corpus started covering doubles and halves. It now partly measures revision, which is why `bench/bench_ood_v2.py` exists, with a hygiene rule written at the top of the file: none of these problems may ever enter a training set.
 
 ---
 
