@@ -32,7 +32,7 @@ Against the closest public French causal LMs, all of comparable size — [GPT-fr
 
 | model | params | bpb ↓ ¹ | arithmetic ↑ ² | facts ↑ ³ |
 |---|---|---|---|---|
-| **baguette (sft)** | **123M** | **1.200** | **93%** | **88%** |
+| **baguette (sft)** | **123M** | **1.197** | **97%** | **100%** |
 | GPT-fr small (Inria) | 124M | 1.504 | 7% | 38% |
 | BelGPT-2 (60 GB corpus) | 124M | 1.732 | 7% | 62% |
 | French GPT-2 (transfer) | 124M | 1.755 | 0% | 38% |
@@ -51,26 +51,30 @@ Full reports with every answer: `bench_reports/`.
 
 | | reworded | novel context | novel concept | total |
 |---|---|---|---|---|
-| **baguette** | 11/15 | 7/15 | 6/10 | **24/40** |
+| **baguette** | 11/15 | 10/15 | 7/10 | **28/40** |
 | best 124M baseline | 0/15 | 0/15 | 1/10 | 1/40 |
 
 The baselines score zero because they follow no instructions at all: they loop on the question instead of answering it. And baguette's own score deserves an asterisk — since the arithmetic corpus now covers doubles, halves and equal shares, part of the *reworded* column measures revision rather than generalisation. Which is why there is a second benchmark.
 
 ### The benchmark that hurts
 
-Seven problem families deliberately kept out of every corpus (`bench/bench_ood_v2.py`). baguette scores **4/40**:
+Seven problem families deliberately kept out of every corpus (`bench/bench_ood_v2.py`). baguette scores **18/40**:
 
 | family | | what it tests |
 |---|---|---|
-| transitivity | 3/6 | A>B, B>C ⇒ A>C — never taught, learned from reading French |
+| composition | **7/7** | "double the double of 5" — two chained operations |
+| trick questions | **5/6** | saying "I don't know" instead of inventing a number |
+| transitivity | 2/6 | A>B, B>C ⇒ A>C — never taught, learned from reading French |
+| branches | 2/5 | comparing two computations and picking a side |
+| cycles | 1/5 | days of the week, modular arithmetic in words |
 | off-by-one | 1/6 | fenceposts, inclusive bounds, ribbon cuts |
-| trick questions | 0/6 | **saying "I don't know" instead of inventing a number** |
-| composition | 0/7 | "double the double of 5" → computes a single double |
-| branches, remainder, cycles | 0/15 | families absent from the corpus |
+| remainder | 0/5 | euclidean division — what is *left over* |
 
-The three GPT-2 models score 1 to 3 out of 40 here, so the gap is within noise — and **no model, mine included, passes a single trick question.** Asked how many bananas are in a basket of apples and oranges, baguette confidently answers eight. Knowing when to refuse is a capability that does not emerge from next-token prediction; it has to be taught, and no mainstream fine-tuning corpus teaches it.
+The first run of this benchmark scored **4/40**, with zeroes in composition and trick questions: asked how many bananas were in a basket of apples and oranges, baguette confidently answered eight. Both families were then added to `gen_math.py` — chained operations with each step written out in the scratchpad, and problems whose answer is *"the statement doesn't say"*. One 25-minute fine-tuning run later, composition went to 7/7 and trick questions to 5/6, with bits per byte, arithmetic and factual recall all improving at the same time.
 
-Both benchmarks ship with the repo, because either one alone would tell a lie.
+The remaining families are untouched by any training data, and it shows. Remainder stays at zero: the model divides but never reports what is left over. Transitivity actually *dropped* from 3/6 — whatever little it had was diluted. And it now occasionally over-refuses: asked what day follows Tuesday by three, it answers that the statement doesn't say.
+
+The three GPT-2 baselines score 1 to 3 out of 40 here. Both benchmarks ship with the repo, because either one alone would tell a lie.
 
 ---
 
@@ -194,7 +198,9 @@ The tokenizer is trained on the corpus: weights and vocabulary go together, and 
 
 **Removing data, not adding it.** The fine-tuning corpus included a reasoning source whose `<think>` blocks ran to 300 words of hesitant monologue — *"alternatively, perhaps the user means…"*. The model learned to imitate the form without the function and would deliberate for four paragraphs over "give me three colours". Dropping that source improved validation loss *and* conciseness, in one 25-minute run.
 
-**Systematic coverage beats sampling.** The model got 7×11 right and 88+59 wrong: it had memorised cases rather than learned a procedure. `gen_math.py` emits *every* two-digit addition, with the operation decomposed in the scratchpad — `80+50=130, 8+9=17, total 147`. Arithmetic went from 50% to 93% and the out-of-distribution score from 15/40 to 24/40, with bits per byte unchanged at 1.20. Teaching a procedure generalises; teaching answers does not.
+**Systematic coverage beats sampling.** The model got 7×11 right and 88+59 wrong: it had memorised cases rather than learned a procedure. `gen_math.py` emits *every* two-digit addition, with the operation decomposed in the scratchpad — `80+50=130, 8+9=17, total 147`. Arithmetic went from 50% to 93%, then to 97% once chained operations were added. Teaching a procedure generalises; teaching answers does not.
+
+**Fixing one weakness fixed three.** The second round of generated data targeted exactly two failures — composed operations and unanswerable questions — plus two-turn dialogues where the topic changes between turns. Composition went 0/7 → 7/7 and trick questions 0/6 → 5/6, as intended. But factual recall also went 88% → 100% and bits per byte improved, neither of which was targeted. The likeliest explanation is the two-turn examples, which pair a calculation with an unrelated factual question and seem to have stabilised switching between the two modes.
 
 **A benchmark dies the moment its families enter the corpus.** The first OOD benchmark measured generalisation until the arithmetic corpus started covering doubles and halves. It now partly measures revision, which is why `bench/bench_ood_v2.py` exists, with a hygiene rule written at the top of the file: none of these problems may ever enter a training set.
 
@@ -204,11 +210,11 @@ The tokenizer is trained on the corpus: weights and vocabulary go together, and 
 
 A 123M model trained on 1.64B tokens is not ChatGPT.
 
-**Works:** correct French, short structured answers, two-digit arithmetic in its own format (93%), readable scratchpad, clean stops, factual recall on common knowledge (88%).
+**Works:** correct French, short structured answers, two-digit arithmetic in its own format (97%), chained operations, readable scratchpad, clean stops, factual recall on common knowledge (100% on the eight probes used here), and saying "the statement doesn't say" when the question is unanswerable (5/6).
 
-**Fragile:** multi-turn tracking (it will drag a number from the previous question into the next answer), problems phrased far from anything seen, composed operations.
+**Fragile:** subtraction sometimes runs backwards (80 − 46 → 24), multiplication and division get swapped, transitive comparisons (2/6), and it occasionally over-refuses on questions it could answer.
 
-**Doesn't:** admit ignorance — it invents a plausible number instead (0/6). Long context. Anything that isn't French. And having been fine-tuned partly on dialogue shared with [frlm](https://github.com/0xZKnw/frlm), it occasionally introduces itself under that name — a small reminder of how much of a model's identity comes from its fine-tuning data.
+**Doesn't:** euclidean remainders (0/5) — it divides but never reports what is left over. Day-of-the-week arithmetic. Fencepost counting. Long context. Anything that isn't French. And having been fine-tuned partly on dialogue shared with [frlm](https://github.com/0xZKnw/frlm), it occasionally introduces itself under that name — a small reminder of how much of a model's identity comes from its fine-tuning data.
 
 ---
 

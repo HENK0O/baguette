@@ -36,10 +36,10 @@ from pathlib import Path
 
 import torch
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bench_vs import ModeleHF, NotreModele, pick_device  # noqa: E402
+from bench.bench_vs import ModeleHF, NotreModele, pick_device  # noqa: E402
 
 # --------------------------------------------------------------------------------------
 # Concurrents — meme classe de poids uniquement (~124-270M). Chaque entree :

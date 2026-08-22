@@ -20,11 +20,11 @@ from pathlib import Path
 
 import torch
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from bench_vs import (CONCURRENTS, ModeleHF, NotreModele, dernier_nombre,  # noqa: E402
-                      liberer, pick_device)
+from bench.bench_vs import (CONCURRENTS, ModeleHF, NotreModele, dernier_nombre,
+                            liberer, pick_device)
 
 # (niveau, question, réponse attendue) — réponses vérifiées à la main.
 PROBLEMES = [

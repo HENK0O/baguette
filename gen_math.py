@@ -11,6 +11,15 @@ l'arithmetique. Deux remedes ici :
              un calcul dur en calculs faciles.
   consigne — comptage et format de sortie (« donne-moi trois X, une par ligne »),
              l'autre echec net du benchmark.
+  refus    — l'information demandee est ABSENTE de l'enonce. Le modele repondait
+             « il y a 8 bananes » a un panier de pommes et d'oranges : il additionne
+             les nombres qu'il voit et fabrique une phrase confiante. Aucun corpus
+             SFT grand public n'enseigne a dire « on ne peut pas savoir ».
+  compose  — deux operations enchainees. « Le double du double de 5 » donnait 10 :
+             le modele calcule la premiere etape et s'arrete. Le <think> pose donc
+             les deux etapes separement.
+  suite    — dialogues a deux tours dont le sujet change. Le modele traine un nombre
+             de la question precedente dans la reponse suivante.
 
 Sortie au format de distill.jsonl : {"t", "m", "k"}, compatible encode_sft.
 
@@ -204,6 +213,127 @@ for _ in range(8_000):
               + ", ".join(f"{i} {c}" for i, c in enumerate(choix, 1))
               + f". Cela fait bien {n}.")
     ajoute(q, pensee, rep, "consigne")
+
+# --------------------------------------------------------------------------------------
+# 8. Refus : l'information n'est pas dans l'enonce
+# --------------------------------------------------------------------------------------
+ABSENTS = [
+    ("pommes", "oranges", "bananes"),
+    ("billes rouges", "billes vertes", "billes bleues"),
+    ("crayons", "stylos", "gommes"),
+    ("chats", "chiens", "lapins"),
+    ("livres", "cahiers", "classeurs"),
+    ("croissants", "pains", "brioches"),
+]
+for _ in range(3_000):
+    a1, a2, absent = rng.choice(ABSENTS)
+    n1, n2 = rng.randint(2, 40), rng.randint(2, 40)
+    ajoute(f"J'ai {n1} {a1} et {n2} {a2} dans mon panier. "
+           f"Combien y a-t-il de {absent} dans le panier ?",
+           f"L'énoncé parle de {a1} et de {a2}. Il ne mentionne aucune {absent}.\n"
+           f"La réponse est donc 0.",
+           f"Il n'y a aucune {absent} dans le panier.", "refus")
+
+HORS_SUJET = [
+    ("Un train roule à {v} km/h pendant {h} heures.", "Quel âge a le conducteur ?",
+     "l'âge du conducteur"),
+    ("{p} a {a} ans. Son chat s'appelle Félix.", "Quel âge a le chat ?",
+     "l'âge du chat"),
+    ("J'achète une baguette à {v} euros et un croissant à {h} euros.",
+     "Combien coûte le journal ?", "le prix du journal"),
+    ("Le boulanger vend {v} croissants le matin.", "Combien de baguettes vend-il ?",
+     "le nombre de baguettes"),
+    ("{p} habite à {v} km de l'école.", "Combien de frères a-t-elle ?",
+     "le nombre de frères"),
+]
+for _ in range(3_000):
+    gab, question, manquant = rng.choice(HORS_SUJET)
+    contexte = gab.format(v=rng.randint(2, 90), h=rng.randint(2, 12),
+                          a=rng.randint(5, 60), p=rng.choice(PRENOMS))
+    ajoute(f"{contexte} {question}",
+           f"L'énoncé ne donne pas {manquant}.\n"
+           f"Les nombres présents ne permettent pas de le calculer.",
+           "On ne peut pas le savoir, l'énoncé ne le précise pas.", "refus")
+
+# --------------------------------------------------------------------------------------
+# 9. Composition : deux operations enchainees
+# --------------------------------------------------------------------------------------
+for _ in range(6_000):
+    forme = rng.choice(["double_double", "moitie_somme", "ajoute_produit",
+                        "soustrais_moitie", "triple_diff", "somme_doubles",
+                        "chaine"])
+    if forme == "double_double":
+        a = rng.randint(2, 40)
+        ajoute(f"Quel est le double du double de {a} ?",
+               f"Le double de {a} = {a * 2}.\nLe double de {a * 2} = {a * 4}.",
+               str(a * 4), "compose")
+    elif forme == "moitie_somme":
+        a, b = rng.randint(2, 40) * 2, rng.randint(2, 40) * 2
+        ajoute(f"Quelle est la moitié de la somme de {a} et {b} ?",
+               f"{a} + {b} = {a + b}.\nLa moitié de {a + b} = {(a + b) // 2}.",
+               str((a + b) // 2), "compose")
+    elif forme == "ajoute_produit":
+        a, b, c = rng.randint(2, 12), rng.randint(2, 12), rng.randint(2, 30)
+        ajoute(f"Ajoute {c} au produit de {a} et {b}. Combien ?",
+               f"{a} × {b} = {a * b}.\n{a * b} + {c} = {a * b + c}.",
+               str(a * b + c), "compose")
+    elif forme == "soustrais_moitie":
+        a, c = rng.randint(3, 40) * 2, rng.randint(2, 15)
+        ajoute(f"Soustrais {c} de la moitié de {a}. Combien ?",
+               f"La moitié de {a} = {a // 2}.\n{a // 2} - {c} = {a // 2 - c}.",
+               str(a // 2 - c), "compose")
+    elif forme == "triple_diff":
+        a, b = rng.randint(10, 60), rng.randint(2, 9)
+        ajoute(f"Quel est le triple de la différence entre {a} et {b} ?",
+               f"{a} - {b} = {a - b}.\nLe triple de {a - b} = {(a - b) * 3}.",
+               str((a - b) * 3), "compose")
+    elif forme == "somme_doubles":
+        a, b = rng.randint(2, 30), rng.randint(2, 30)
+        ajoute(f"Quelle est la somme du double de {a} et du double de {b} ?",
+               f"Le double de {a} = {a * 2}.\nLe double de {b} = {b * 2}.\n"
+               f"{a * 2} + {b * 2} = {(a + b) * 2}.",
+               str((a + b) * 2), "compose")
+    else:
+        d = rng.randint(2, 9)
+        a = rng.randint(2, 30)
+        b = rng.randint(1, 40)
+        total = a + b
+        total -= total % d           # on force une division exacte
+        b = total - a
+        if b < 1:
+            continue
+        ajoute(f"Prends {a}, ajoute {b}, puis divise le tout par {d}. Combien ?",
+               f"{a} + {b} = {total}.\n{total} / {d} = {total // d}.",
+               str(total // d), "compose")
+
+# --------------------------------------------------------------------------------------
+# 10. Suites de deux tours : le sujet change, les nombres du tour 1 ne doivent pas
+#     contaminer le tour 2
+# --------------------------------------------------------------------------------------
+FAITS_COURTS = [
+    ("Quelle est la capitale de la France ?", "Paris."),
+    ("Qui a écrit Les Misérables ?", "Victor Hugo."),
+    ("Combien de jours dans une semaine ?", "Sept."),
+    ("De quelle couleur est la neige ?", "Blanche."),
+    ("Quel est le premier mois de l'année ?", "Janvier."),
+    ("Les abeilles produisent quoi ?", "Du miel."),
+    ("Combien de côtés a un triangle ?", "Trois."),
+    ("La Terre tourne autour de quoi ?", "Du Soleil."),
+]
+for _ in range(4_000):
+    p_ = rng.choice(PRENOMS)
+    o = rng.choice(OBJETS)
+    a, b = rng.randint(20, 90), rng.randint(2, 19)
+    q1 = f"{p_} a {a} {o} et en donne {b}. Combien lui en reste-t-il ?"
+    r1 = f"<think>\n{a} - {b} = {a - b}.\n</think>\n{p_} a {a - b} {o}."
+    q2, r2 = rng.choice(FAITS_COURTS)
+    r2 = f"<think>\n\n</think>\n{r2}"
+    exemples.append({
+        "t": q1 + r1 + q2 + r2,
+        "m": [{"role": "user", "text": q1}, {"role": "assistant", "text": r1},
+              {"role": "user", "text": q2}, {"role": "assistant", "text": r2}],
+        "k": "suite",
+    })
 
 # --------------------------------------------------------------------------------------
 rng.shuffle(exemples)
