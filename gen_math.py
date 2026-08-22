@@ -20,6 +20,9 @@ l'arithmetique. Deux remedes ici :
              les deux etapes separement.
   suite    — dialogues a deux tours dont le sujet change. Le modele traine un nombre
              de la question precedente dans la reponse suivante.
+  reste    — division euclidienne. Le corpus ne contenait que des divisions exactes :
+             le modele divise mais ne rapporte jamais ce qui RESTE. Le <think> pose
+             donc explicitement quotient ET reste.
 
 Sortie au format de distill.jsonl : {"t", "m", "k"}, compatible encode_sft.
 
@@ -334,6 +337,69 @@ for _ in range(4_000):
               {"role": "user", "text": q2}, {"role": "assistant", "text": r2}],
         "k": "suite",
     })
+
+# --------------------------------------------------------------------------------------
+# 11. Division euclidienne — DESACTIVE (voir bench_reports/)
+#
+# Cette famille marchait : reste 0/5 -> 5/5 sur le benchmark v2. Mais elle a coute
+# 25 points de rappel factuel (100% -> 75%) et brouille la frontiere entre calculer
+# et refuser : « sur 25 eleves, 11 sont des filles, combien de garcons ? » recevait
+# « on ne peut pas le savoir ». Baisser son poids (repeat-math 3 -> 2) n'a rien
+# regle : le calcul est descendu a 93% sans que les faits remontent.
+#
+# A 123M parametres la capacite est limitee : ajouter une competence en retire une
+# autre. Le bloc est garde commente pour que l'experience reste reproductible.
+# --------------------------------------------------------------------------------------
+# # --------------------------------------------------------------------------------------
+# # 11. Division euclidienne : ce qui RESTE, pas le quotient
+# # --------------------------------------------------------------------------------------
+# GAB_RESTE = [
+#     ("On partage {n} bonbons entre {d} enfants, chacun en reçoit autant. "
+#      "Combien de bonbons restent ?", "Il reste {r} bonbons."),
+#     ("J'ai {n} œufs et des boîtes de {d}. Je remplis uniquement des boîtes complètes. "
+#      "Combien d'œufs ne sont pas en boîte ?", "Il reste {r} œufs hors des boîtes."),
+#     ("Un ruban de {n} cm est coupé en morceaux de {d} cm. "
+#      "Quelle longueur de ruban reste-t-il, en cm ?", "Il reste {r} cm."),
+#     ("{n} élèves montent dans des voitures de {d} places. Toutes les voitures sont "
+#      "pleines sauf la dernière. Combien d'élèves dans la dernière voiture ?",
+#      "Il y a {r} élèves dans la dernière voiture."),
+#     ("Il y a {n} chaises à ranger en rangées de {d}. "
+#      "Combien de chaises ne forment pas une rangée complète ?",
+#      "Il reste {r} chaises."),
+#     ("Calcule le reste de la division de {n} par {d}.", "{r}"),
+#     ("Combien reste-t-il quand on divise {n} par {d} ?", "{r}"),
+# ]
+#
+# for _ in range(6_000):
+#     d = rng.randint(2, 12)
+#     q_ = rng.randint(1, 15)
+#     r = rng.randint(1, d - 1)          # reste non nul : c'est tout l'interet
+#     n = q_ * d + r
+#     gab, rep_ = rng.choice(GAB_RESTE)
+#     pensee = (f"On divise {n} par {d}.\n"
+#               f"{d} × {q_} = {q_ * d}, et {n} - {q_ * d} = {r}.\n"
+#               f"Donc {n} = {d} × {q_} + {r} : le quotient est {q_}, le reste est {r}.")
+#     reponse = rep_.format(n=n, d=d, r=r)
+#     if r == 1:                      # « il reste 1 bonbons » ferait tache
+#         for pl, sg in (("bonbons", "bonbon"), ("œufs", "œuf"), ("élèves", "élève"),
+#                        ("chaises", "chaise")):
+#             reponse = reponse.replace(pl, sg)
+#         reponse = reponse.replace("Il y a 1 élève dans", "Il y a 1 élève dans")
+#     ajoute(gab.format(n=n, d=d, r=r), pensee, reponse, "reste")
+#
+# # le quotient reste demande dans d'autres formulations : on garde la distinction nette
+# for _ in range(2_000):
+#     d = rng.randint(2, 12)
+#     q_ = rng.randint(2, 15)
+#     r = rng.randint(1, d - 1)
+#     n = q_ * d + r
+#     pensee = (f"On divise {n} par {d}.\n"
+#               f"{d} × {q_} = {q_ * d}, il reste {r}.\n"
+#               f"On peut donc remplir {q_} groupes complets.")
+#     objets = "objet" if r == 1 else "objets"
+#     ajoute(f"Avec {n} objets, combien de groupes complets de {d} peut-on faire ?",
+#            pensee, f"On peut faire {q_} groupes complets, et il reste {r} {objets}.",
+#            "reste")
 
 # --------------------------------------------------------------------------------------
 rng.shuffle(exemples)
