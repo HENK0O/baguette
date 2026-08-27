@@ -714,7 +714,7 @@ def cmd_chat(args):
     if path is None:
         sys.exit(f"[!] Aucun checkpoint dans {run_dir}. Entraîne d'abord : python run.py train")
 
-    ck = torch.load(path, map_location="cpu", weights_only=False)
+    ck = torch.load(path, map_location="cpu", weights_only=True)
     mcfg = ModelConfig.from_dict(ck["model_cfg"])
     device = pick_device()
     amp_dtype = autocast_dtype_for(device, args.dtype)
