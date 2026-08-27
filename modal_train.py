@@ -6,7 +6,11 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch", "numpy", "datasets", "tokenizers", "rich")
     .add_local_dir(".", remote_path="/root/llm",
-                   ignore=["data", "runs", ".venv", "__pycache__"])
+                   ignore=[
+                       "data", "runs", ".venv", "__pycache__", ".git",
+                       ".env", ".env.*", ".modal.toml",
+                       "*.pem", "*.key", "*.p12", "*.pfx",
+                   ])
 )
 
 vol = modal.Volume.from_name("llm-data", create_if_missing=True)
