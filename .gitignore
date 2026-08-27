@@ -36,3 +36,6 @@ __pycache__/
 *.key
 *.p12
 *.pfx
+
+# Local release staging
+/tokenizer.json
