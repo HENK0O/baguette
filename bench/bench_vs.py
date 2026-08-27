@@ -177,7 +177,7 @@ class NotreModele:
                 break
         assert ckpt, f"aucun checkpoint sous {run_dir}"
 
-        ck = torch.load(ckpt, map_location=device, weights_only=False)
+        ck = torch.load(ckpt, map_location=device, weights_only=True)
         mcfg = ModelConfig.from_dict(ck["model_cfg"])
         self.model = build_model(mcfg).to(device)
         self.model.load_state_dict(ck["model"])

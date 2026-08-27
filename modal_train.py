@@ -6,7 +6,11 @@ image = (
     modal.Image.debian_slim(python_version="3.12")
     .pip_install("torch", "numpy", "datasets", "tokenizers", "rich")
     .add_local_dir(".", remote_path="/root/llm",
-                   ignore=["data", "runs", ".venv", "__pycache__"])
+                   ignore=[
+                       "data", "runs", ".venv", "__pycache__", ".git",
+                       ".env", ".env.*", ".modal.toml",
+                       "*.pem", "*.key", "*.p12", "*.pfx",
+                   ])
 )
 
 vol = modal.Volume.from_name("llm-data", create_if_missing=True)
@@ -23,7 +27,7 @@ def prepare():
     vol.commit()
 
 
-@app.function(image=image, gpu="A100-80GB", volumes={"/root/persist": vol},
+@app.function(image=image, gpu="H100", volumes={"/root/persist": vol},
               timeout=60 * 60 * 6)
 def train(steps: int = 200, resume: bool = False):
     import os, subprocess

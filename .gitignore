@@ -28,3 +28,14 @@ __pycache__/
 
 # Modal
 .modal.toml
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local release staging
+/tokenizer.json
